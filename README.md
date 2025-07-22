@@ -1,156 +1,151 @@
-# Automate AWS Infrastructure with Terraform
+# Terraform & AWS EKS
 
-## 📘 Project Overview
+## Project Overview
 
-This project demonstrates how to automate the provisioning of a full AWS infrastructure setup using Terraform. It also includes deploying a Docker container (running NGINX) to an EC2 instance. This project was created as part of the "Terraform" module in the DevOps Bootcamp by TechWorld with Nana.
-
----
-
-## ⚙️ Technologies Used
-
-- **Terraform**
-- **AWS** (EC2, VPC, Subnet, Route Table, Internet Gateway, Security Group)
-- **Docker**
-- **Linux**
-- **Git**
+This project demonstrates how to automate the provisioning of an Amazon EKS (Elastic Kubernetes Service) cluster using Terraform. It includes configuring infrastructure with both public and private subnets, provisioning worker nodes, and deploying a simple NGINX application to verify the setup. The approach follows best practices for modular, reusable infrastructure as taught by Nana in the TechWorld with Nana bootcamp.
 
 ---
 
-## 🚀 What This Project Does
+## Technologies Used
 
-- Provisions the following AWS resources using Terraform:
-
-  - VPC
-  - Subnet
-  - Route Table
-  - Internet Gateway
-  - EC2 Instance
-  - Security Group
-
-- Uses a **user data shell script** to:
-
-  - Install Docker on the EC2 instance
-  - Start the Docker service
-  - Add the EC2 user to the Docker group
-  - Run an NGINX container on port 8080
+* **Terraform**
+* **AWS EKS**
+* **Docker**
+* **Linux**
+* **Git**
 
 ---
 
-## 📜 entry.script.sh — Provisioning Script
+## Infrastructure Design
 
-Nana had me create a new file in the Terraform project called `entry.script.sh`, with the following content:
+* **3 Public Subnets** (each in a different AZ, connected to an Internet Gateway)
+* **3 Private Subnets** (each in a different AZ, routed through a NAT Gateway)
+* **EKS Cluster** with worker nodes (Amazon Linux AMIs)
 
-```bash
-#!/bin/bash
-sudo yum update && sudo yum install -y docker
-sudo systemctl start docker
-sudo usermod -aG docker ec2-user
-docker run -p 8080:80 nginx
+---
+
+## Prerequisites
+
+Make sure the following are installed:
+
+* AWS CLI
+* kubectl
+* aws-iam-authenticator
+
+---
+
+## Key Terraform Configurations
+
+In `eks-cluster.tf`, ensure the following line is included:
+
+```hcl
+cluster_endpoint_public_access = true
 ```
 
-### 🔍 What this script does:
-
-1. `sudo yum update && sudo yum install -y docker`
-
-   - Updates the package list and installs Docker on the EC2 instance
-
-2. `sudo systemctl start docker`
-
-   - Starts the Docker service
-
-3. `sudo usermod -aG docker ec2-user`
-
-   - Adds the default EC2 user to the Docker group so Docker commands can be run without `sudo`
-
-4. `docker run -p 8080:80 nginx`
-
-   - Pulls and runs the official NGINX Docker image and exposes it on port 8080
-
-This script is executed automatically by the EC2 instance during launch via the Terraform `user_data` directive.
+This allows you to access your EKS cluster from your local machine.
 
 ---
 
-## 🧪 Commands Used
-
-### Initialize the Terraform project
+## Terraform Workflow
 
 ```bash
 terraform init
-```
-
-> Initializes the working directory containing Terraform configuration files and downloads the required providers.
-
-### Preview changes
-
-```bash
 terraform plan
+terraform apply --auto-approve
 ```
 
-> Shows the execution plan and allows you to verify which resources will be created, updated, or destroyed.
+---
 
-### Apply the configuration
+## Configure kubectl to Connect to EKS
 
 ```bash
-terraform apply
+aws eks update-kubeconfig --name myapp-eks-cluster --region us-east-2
 ```
 
-> Applies the changes required to reach the desired state of the configuration.
+Output:
 
-### Destroy the infrastructure
+```
+Added new context arn:aws:eks:us-east-2:193668171416:cluster/myapp-eks-cluster to /Users/stevenlaskin/.kube/config
+```
+
+---
+
+## Validate EKS Cluster Nodes
 
 ```bash
-terraform destroy
+kubectl get node
 ```
 
-> Destroys the infrastructure and resources defined in the Terraform configuration.
-
----
-
-## 🧾 Sample Output (after `terraform apply`)
+Output:
 
 ```
-Apply complete! Resources: 7 added, 0 changed, 0 destroyed.
-
-Outputs:
-public_ip = "3.121.45.100"
-```
-
-You can now access the NGINX web server on: `http://<public_ip>:8080`
-
----
-
-## 💡 Key Takeaways from Nana’s Lesson
-
-- Terraform uses a **declarative syntax** to define infrastructure: you declare what the final state should be, and Terraform figures out how to get there.
-- Terraform is **idempotent** — applying the same configuration multiple times results in no additional changes.
-- By combining Terraform with AWS and Docker, you can fully automate end-to-end infrastructure and basic application deployment.
-- Resource dependencies are automatically handled by Terraform.
-- You can replicate entire environments (dev, staging, prod) by reusing or tweaking `.tf` files.
-
----
-
-## 📂 Folder Structure
-
-```
-Terraform/
-├── main.tf
-├── providers.tf
-├── terraform.tfstate
-├── terraform.tfstate.backup
-├── terraform-dev.tfvars
-├── .terraform.lock.hcl
-├── .gitignore
-├── entry.script.sh
+NAME                                       STATUS   ROLES    AGE   VERSION
+ip-10-0-1-108.us-east-2.compute.internal   Ready    <none>   24m   v1.27.16-eks-aeac579
+...
 ```
 
 ---
 
-## 🧼 Notes
+## Deploy NGINX to the Cluster
 
-> Make sure to add a `.gitignore` file to exclude sensitive files like `terraform.tfstate`, `.terraform/`, and `*.tfvars`. You can use a template from the Terraform GitHub `.gitignore` best practices.
+```bash
+kubectl apply -f ~/nginx-config3.yaml
+```
+
+Then monitor pod deployment:
+
+```bash
+kubectl get pod -w
+```
+
+Output:
+
+```
+NAME                    READY   STATUS    RESTARTS   AGE
+nginx-55f598f8d-55nlp   1/1     Running   0          9s
+```
 
 ---
 
-## 👤 Author
+## Access the NGINX Web Page
 
-GitHub: [shlaskin101](https://github.com/shlaskin101)
+Retrieve the external LoadBalancer DNS:
+
+```bash
+kubectl get svc
+```
+
+Output:
+
+```
+NAME         TYPE           CLUSTER-IP      EXTERNAL-IP                                                               PORT(S)        AGE
+nginx        LoadBalancer   172.20.37.167   a5fa0d6b35759423daebbb9533fc2cd8-1646228942.us-east-2.elb.amazonaws.com   80:31476/TCP   43s
+```
+
+Visit the DNS name in a browser to confirm deployment:
+
+```
+Welcome to nginx!
+```
+
+---
+
+## Tear Down Infrastructure
+
+```bash
+terraform destroy --auto-approve
+terraform state list  # Ensure resources were destroyed
+```
+
+---
+
+## Final Thoughts
+
+This project successfully demonstrates end-to-end automation of an AWS EKS cluster with Terraform. Nana emphasizes the importance of breaking infrastructure into reusable modules and validating deployments through simple service exposure like NGINX before expanding.
+
+---
+
+## Author
+
+Steven Laskin
+DevOps Engineer in Training
